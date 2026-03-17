@@ -8,12 +8,13 @@ CLASSES = {
         },
         "passive": {
             "name": "Arcane Fortune",
-            "description": "+1 extra reroll at the start of a run",
+            "description": "+1 starting reroll",
             "type": "reroll_bonus",
             "value": 1
         },
         "loot_tags": ["caster", "intellect"],
-        "starter_weapon": "Oak Staff"
+        "starter_weapon": "Oak Staff",
+        "starting_rerolls": 3
     },
     "Warrior": {
         "base_stats": {
@@ -29,7 +30,8 @@ CLASSES = {
             "value": 1
         },
         "loot_tags": ["strength", "melee", "heavy"],
-        "starter_weapon": "Longsword"
+        "starter_weapon": "Longsword",
+        "starting_rerolls": 3
     },
     "Rogue": {
         "base_stats": {
@@ -45,6 +47,7 @@ CLASSES = {
             "value": 10
         },
         "loot_tags": ["dexterity", "light"],
-        "starter_weapon": "Dagger"
+        "starter_weapon": "Dagger",
+        "starting_rerolls": 3
     }
 }

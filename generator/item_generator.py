@@ -8,13 +8,18 @@ from data.item_levels import ITEM_LEVELS
 
 
 class ItemGenerator:
-    def __init__(self):
+    def __init__(self, rng=None):
+        self.rng = rng if rng is not None else random.Random()
+
         self.base_items = BASE_ITEMS
         self.prefixes = PREFIXES
         self.suffixes = SUFFIXES
         self.flavor_texts = FLAVOR_TEXTS
         self.rarities = RARITIES
         self.item_levels = ITEM_LEVELS
+
+    def set_rng(self, rng):
+        self.rng = rng
 
     def roll_rarity(self, min_rarity=None):
         rarity_order = ["Common", "Magic", "Rare", "Legendary"]
@@ -23,7 +28,7 @@ class ItemGenerator:
         rarity_weights = [self.rarities[rarity]["weight"] for rarity in rarity_names]
 
         if min_rarity is None:
-            return random.choices(rarity_names, weights=rarity_weights, k=1)[0]
+            return self.rng.choices(rarity_names, weights=rarity_weights, k=1)[0]
 
         min_index = rarity_order.index(min_rarity)
         allowed = rarity_order[min_index:]
@@ -31,12 +36,12 @@ class ItemGenerator:
         filtered_names = [r for r in rarity_names if r in allowed]
         filtered_weights = [self.rarities[r]["weight"] for r in filtered_names]
 
-        return random.choices(filtered_names, weights=filtered_weights, k=1)[0]
+        return self.rng.choices(filtered_names, weights=filtered_weights, k=1)[0]
 
     def roll_item_level(self, wave=1):
         min_level = max(1, 1 + (wave // 2))
         max_level = min(self.item_levels["max_level"], 5 + (wave * 2))
-        return random.randint(min_level, max_level)
+        return self.rng.randint(min_level, max_level)
 
     def get_item_tier(self, item_level):
         for tier in self.item_levels["tiers"]:
@@ -45,13 +50,13 @@ class ItemGenerator:
         return "Crude"
 
     def roll_slot(self):
-        return random.choice(list(self.base_items.keys()))
+        return self.rng.choice(list(self.base_items.keys()))
 
     def roll_base_item(self, slot, class_tags=None):
         items = self.base_items[slot]
 
         if not class_tags:
-            return random.choice(items)
+            return self.rng.choice(items)
 
         weighted_items = []
         for item in items:
@@ -60,7 +65,7 @@ class ItemGenerator:
             weight = 1 + (overlap * 3)
             weighted_items.append(weight)
 
-        return random.choices(items, weights=weighted_items, k=1)[0]
+        return self.rng.choices(items, weights=weighted_items, k=1)[0]
 
     def get_base_item_by_name(self, base_item_name):
         for slot, items in self.base_items.items():
@@ -90,7 +95,7 @@ class ItemGenerator:
             return None
 
         if not class_tags:
-            return random.choice(affixes)
+            return self.rng.choice(affixes)
 
         weights = []
         class_tag_set = set(class_tags)
@@ -101,7 +106,7 @@ class ItemGenerator:
             weight = 1 + (overlap * 3)
             weights.append(weight)
 
-        return random.choices(affixes, weights=weights, k=1)[0]
+        return self.rng.choices(affixes, weights=weights, k=1)[0]
 
     def roll_affixes(self, rarity, base_item, slot, class_tags=None):
         num_affixes = self.rarities[rarity]["num_affixes"]
@@ -166,7 +171,7 @@ class ItemGenerator:
 
         for stat_name, stat_range in base_item["base_stats"].items():
             min_value, max_value = stat_range
-            rolled_value = random.randint(min_value, max_value)
+            rolled_value = self.rng.randint(min_value, max_value)
             scaled_value = max(1, round(rolled_value * multiplier))
             stats[stat_name] = scaled_value
 
@@ -177,7 +182,7 @@ class ItemGenerator:
 
         for affix in affixes:
             stat_name = affix["stat"]
-            rolled_value = random.randint(affix["min"], affix["max"])
+            rolled_value = self.rng.randint(affix["min"], affix["max"])
             scaled_value = max(1, round(rolled_value * multiplier))
 
             if stat_name in stats:
@@ -196,7 +201,7 @@ class ItemGenerator:
         self.add_affix_stats(stats, prefixes, item_level)
         self.add_affix_stats(stats, suffixes, item_level)
 
-        flavor_text = random.choice(self.flavor_texts)
+        flavor_text = self.rng.choice(self.flavor_texts)
 
         return Item(
             name=name,

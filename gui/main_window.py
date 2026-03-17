@@ -1,5 +1,8 @@
+import os
+import random
 import tkinter as tk
 from tkinter import ttk, messagebox
+from PIL import Image, ImageTk
 
 from generator.item_generator import ItemGenerator
 from generator.enemy_generator import EnemyGenerator
@@ -14,6 +17,13 @@ RARITY_COLORS = {
     "Magic": "#66a3ff",
     "Rare": "#ffd24d",
     "Legendary": "#ff9933"
+}
+
+
+CLASS_CARD_COLORS = {
+    "Mage": "#d9ccff",
+    "Warrior": "#ffd9b3",
+    "Rogue": "#cfe8cf"
 }
 
 
@@ -63,11 +73,13 @@ class ToolTip:
 class ARPGGUI:
     def __init__(self, root, version):
         self.root = root
-        self.root.title(f"ARPG Draft Builder - {version}")
-        self.root.geometry("1550x980")
-
-        self.item_generator = ItemGenerator()
-        self.enemy_generator = EnemyGenerator()
+        self.version = version
+        self.root.title(f"Nothing But The Loot - {version}")
+        self.root.geometry("1700x1100")
+        self.root.minsize(1400, 900)
+        self.rng = random.Random()
+        self.item_generator = ItemGenerator(self.rng)
+        self.enemy_generator = EnemyGenerator(self.rng)
 
         self.character = None
         self.round_number = 1
@@ -79,17 +91,22 @@ class ARPGGUI:
         self.opening_draft_current = 0
 
         self.selected_class = tk.StringVar(value="Warrior")
+        self.character_name_var = tk.StringVar(value="Adventurer")
+        self.seed_var = tk.StringVar(value="")
+
         self.equipment_slot_labels = {}
         self.next_reward_min_rarity = None
         self.last_combat_result = None
         self.pending_enemies = []
         self.current_preview_item = None
+        self.class_card_frames = {}
+        self.class_card_images = {}
 
         self.app_state = load_app_state()
 
         self.create_layout()
         self.show_start_screen()
-        
+
     def restart_to_intro(self):
         self.character = None
         self.round_number = 1
@@ -100,6 +117,10 @@ class ARPGGUI:
         self.last_combat_result = None
         self.pending_enemies = []
         self.current_preview_item = None
+        self.rng = random.Random()
+
+        self.item_generator.set_rng(self.rng)
+        self.enemy_generator.set_rng(self.rng)
 
         self.hide_boss_banner()
 
@@ -120,8 +141,10 @@ class ARPGGUI:
         self.status_label.config(
             text=f"Status: Idle | Best: {self.app_state.get('best_round', 0)}"
         )
-
+        self.update_reroll_display()
+        self.update_seed_display()
         self.show_start_screen()
+
     # -------------------------
     # Layout
     # -------------------------
@@ -135,7 +158,6 @@ class ARPGGUI:
         self.main_frame.columnconfigure(2, weight=2)
         self.main_frame.rowconfigure(2, weight=1)
 
-        self.create_top_bar()
         self.create_boss_banner()
 
         self.left_panel = ttk.Frame(self.main_frame)
@@ -150,6 +172,7 @@ class ARPGGUI:
         self.bottom_panel = ttk.Frame(self.main_frame)
         self.bottom_panel.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
 
+        self.create_top_bar()
         self.create_character_panel()
         self.create_item_panel()
         self.create_comparison_panel()
@@ -159,25 +182,17 @@ class ARPGGUI:
         top_bar = ttk.Frame(self.main_frame)
         top_bar.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
 
-        ttk.Label(top_bar, text="Class:").pack(side="left", padx=(0, 5))
-
-        class_box = ttk.Combobox(
-            top_bar,
-            textvariable=self.selected_class,
-            values=["Mage", "Warrior", "Rogue"],
-            state="readonly",
-            width=12
-        )
-        class_box.pack(side="left", padx=(0, 15))
-
-        self.start_button = ttk.Button(top_bar, text="Start Run", command=self.start_run)
-        self.start_button.pack(side="left", padx=(0, 10))
+        self.start_button = ttk.Button(top_bar, text="Start Run", command=self.show_start_screen)
+        self.start_button.pack(side="left", padx=(0, 10), pady=(10, 20))
 
         self.legend_button = ttk.Button(top_bar, text="Stat Legend", command=self.show_stat_legend)
         self.legend_button.pack(side="left", padx=(0, 10))
 
         self.history_button = ttk.Button(top_bar, text="Run History", command=self.show_run_history)
         self.history_button.pack(side="left", padx=(0, 10))
+
+        self.seed_display_label = ttk.Label(top_bar, text="Seed: -", font=("Arial", 10, "bold"))
+        self.seed_display_label.pack(side="left", padx=(10, 10))
 
         self.status_label = ttk.Label(top_bar, text="Status: Idle", font=("Arial", 11, "bold"))
         self.status_label.pack(side="right")
@@ -199,14 +214,32 @@ class ARPGGUI:
     def hide_boss_banner(self):
         self.boss_banner.grid_forget()
 
+    def get_asset_path(self, *parts):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base_dir, *parts)
+
+    def load_class_portrait(self, class_name, size=(220, 300)):
+        filename_map = {
+            "Mage": "mage.png",
+            "Warrior": "warrior.png",
+            "Rogue": "rogue.png"
+        }
+
+        image_path = self.get_asset_path("assets", "classes", filename_map[class_name])
+
+        image = Image.open(image_path)
+        image = image.resize(size, Image.LANCZOS)
+        return ImageTk.PhotoImage(image)
+
     # -------------------------
-    # Start Screen
+    # Start Screen / Character Creation
     # -------------------------
 
     def show_start_screen(self):
         self.start_screen = tk.Toplevel(self.root)
-        self.start_screen.title("Welcome")
-        self.start_screen.geometry("520x420")
+        self.start_screen.title("Character Creation")
+        self.start_screen.geometry("950x1200")
+        self.start_screen.minsize(900, 720)
         self.start_screen.transient(self.root)
         self.start_screen.grab_set()
 
@@ -216,14 +249,14 @@ class ARPGGUI:
         ttk.Label(
             frame,
             text="ARPG Draft Builder",
-            font=("Arial", 20, "bold")
-        ).pack(pady=(10, 20))
+            font=("Arial", 22, "bold")
+        ).pack(pady=(5, 10))
 
         ttk.Label(
             frame,
-            text="Build your gear. Survive the arena.",
+            text="Create your character and enter the arena.",
             font=("Arial", 11)
-        ).pack(pady=(0, 20))
+        ).pack(pady=(0, 15))
 
         best_round = self.app_state.get("best_round", 0)
         best_class = self.app_state.get("best_class", "None")
@@ -232,30 +265,242 @@ class ARPGGUI:
             frame,
             text=f"Best Run: Round {best_round} ({best_class})",
             font=("Arial", 12, "bold")
-        ).pack(pady=(0, 20))
+        ).pack(pady=(0, 15))
 
-        ttk.Label(frame, text="Choose Class:").pack()
-        class_box = ttk.Combobox(
+        form_frame = ttk.Frame(frame)
+        form_frame.pack(fill="x", pady=(0, 15))
+
+        ttk.Label(form_frame, text="Character Name:").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=6)
+        name_entry = ttk.Entry(form_frame, textvariable=self.character_name_var, width=30)
+        name_entry.grid(row=0, column=1, sticky="w", pady=6)
+
+        ttk.Label(form_frame, text="Optional Seed:").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=6)
+        seed_entry = ttk.Entry(form_frame, textvariable=self.seed_var, width=30)
+        seed_entry.grid(row=1, column=1, sticky="w", pady=6)
+
+        button_frame = ttk.Frame(frame)
+        button_frame.pack(pady=(10, 0))
+
+        ttk.Button(
+            button_frame,
+            text="Start Adventure",
+            command=self.begin_from_start_screen
+        ).pack(ipadx=14, ipady=6)
+
+        ttk.Label(
             frame,
-            textvariable=self.selected_class,
-            values=["Mage", "Warrior", "Rogue"],
-            state="readonly",
-            width=15
-        )
-        class_box.pack(pady=(5, 20))
+            text="Choose Your Class",
+            font=("Arial", 14, "bold")
+        ).pack(pady=(5, 10))
 
-        class_descriptions = (
-            "Mage — high Intellect, extra reroll\n"
-            "Warrior — high Strength/Stamina, opening attack bonus\n"
-            "Rogue — high Dexterity, dodge bonus"
-        )
-        ttk.Label(frame, text=class_descriptions, justify="center").pack(pady=(0, 20))
+        cards_frame = ttk.Frame(frame)
+        cards_frame.pack(fill="x", pady=(10, 15))
 
-        ttk.Button(frame, text="Start Adventure", command=self.begin_from_start_screen).pack(ipadx=12, ipady=6)
+        self.class_card_frames = {}
+
+        classes = [
+            (
+                "Mage",
+                "Mage\nGlowing Staff\nHigh Intellect\n+1 starting reroll"
+            ),
+            (
+                "Warrior",
+                "Warrior\nSword & Shield\nHigh Strength/Stamina\nOpening attack bonus"
+            ),
+            (
+                "Rogue",
+                "Rogue\nPoisoned Knife\nHigh Dexterity\nDodge bonus"
+            )
+        ]
+
+        self.class_card_images = {}
+
+        for idx, (class_name, description) in enumerate(classes):
+            card = tk.Frame(
+                cards_frame,
+                bd=3,
+                relief="groove",
+                padx=12,
+                pady=12,
+                bg=CLASS_CARD_COLORS[class_name],
+                cursor="hand2"
+            )
+            card.grid(row=0, column=idx, padx=10, sticky="nsew")
+
+            cards_frame.columnconfigure(idx, weight=1)
+
+            title = tk.Label(
+                card,
+                text=class_name,
+                font=("Arial", 14, "bold"),
+                bg=CLASS_CARD_COLORS[class_name]
+            )
+            title.pack(pady=(0, 8))
+
+            portrait = self.load_class_portrait(class_name)
+            self.class_card_images[class_name] = portrait
+
+            art = tk.Label(
+                card,
+                image=portrait,
+                bg=CLASS_CARD_COLORS[class_name]
+            )
+            art.pack(pady=(0, 8))
+
+            desc = tk.Label(
+                card,
+                text=description,
+                justify="center",
+                wraplength=180,
+                bg=CLASS_CARD_COLORS[class_name]
+            )
+            desc.pack()
+
+            for widget in (card, title, art, desc):
+                widget.bind("<Button-1>", lambda event, c=class_name: self.select_class_card(c))
+                widget.bind("<Enter>", lambda event, c=class_name: self.on_class_card_enter(c))
+                widget.bind("<Leave>", lambda event, c=class_name: self.on_class_card_leave(c))
+
+                self.class_card_frames[class_name] = card
+
+        self.update_class_card_selection()
+        ttk.Label(
+            frame,
+            text="Selected Class Details",
+            font=("Arial", 13, "bold")
+        ).pack(pady=(15, 8))
+
+        self.class_preview_text = tk.Text(
+            frame,
+            height=12,
+            width=60,
+            wrap="word"
+        )
+        self.class_preview_text.pack(fill="x", pady=(0, 15))
+        self.class_preview_text.config(state="disabled")
+
+        self.update_class_preview_panel()
+
+    def get_class_preview_text(self, class_name):
+        class_data = CLASSES[class_name]
+
+        starting_rerolls = class_data["starting_rerolls"]
+        if class_data["passive"]["type"] == "reroll_bonus":
+            starting_rerolls += class_data["passive"]["value"]
+
+        lines = [
+            f"Class: {class_name}",
+            "",
+            f"Passive: {class_data['passive']['name']}",
+            f"Effect: {class_data['passive']['description']}",
+            "",
+            f"Starter Weapon: {class_data['starter_weapon']}",
+            f"Starting Rerolls: {starting_rerolls}",
+            "",
+            "Base Stats:"
+        ]
+
+        for stat_name, stat_value in class_data["base_stats"].items():
+            lines.append(f"  {stat_name}: {stat_value}")
+
+        lines.append("")
+        lines.append(f"Loot Bias: {', '.join(class_data['loot_tags'])}")
+
+        return "\n".join(lines)
+
+    def update_class_preview_panel(self):
+        class_name = self.selected_class.get()
+        preview_text = self.get_class_preview_text(class_name)
+
+        self.class_preview_text.config(state="normal")
+        self.class_preview_text.delete("1.0", tk.END)
+        self.class_preview_text.insert(tk.END, preview_text)
+        self.class_preview_text.config(state="disabled")
+
+    def on_class_card_enter(self, class_name):
+        if class_name not in self.class_card_frames:
+            return
+
+        card = self.class_card_frames[class_name]
+
+        if self.selected_class.get() == class_name:
+            card.config(
+                highlightbackground="green",
+                highlightcolor="green",
+                highlightthickness=4,
+                bd=4,
+                relief="raised"
+            )
+        else:
+            card.config(
+                highlightbackground="#d4af37",
+                highlightcolor="#d4af37",
+                highlightthickness=3,
+                bd=4,
+                relief="raised"
+            )
+
+    def on_class_card_leave(self, class_name):
+        if class_name not in self.class_card_frames:
+            return
+
+        card = self.class_card_frames[class_name]
+
+        if self.selected_class.get() == class_name:
+            card.config(
+                highlightbackground="green",
+                highlightcolor="green",
+                highlightthickness=4,
+                bd=4,
+                relief="groove"
+            )
+        else:
+            card.config(
+                highlightthickness=0,
+                bd=3,
+                relief="groove"
+            )
+
+    def select_class_card(self, class_name):
+        self.selected_class.set(class_name)
+        self.update_class_card_selection()
+        self.update_class_preview_panel()
+
+    def update_class_card_selection(self):
+        for class_name, frame in self.class_card_frames.items():
+            if self.selected_class.get() == class_name:
+                frame.config(
+                    highlightbackground="green",
+                    highlightcolor="green",
+                    highlightthickness=4,
+                    bd=4,
+                    relief="groove"
+                )
+            else:
+                frame.config(
+                    highlightthickness=0,
+                    bd=3,
+                    relief="groove"
+                )
 
     def begin_from_start_screen(self):
+        class_name = self.selected_class.get().strip()
+        if class_name not in ["Mage", "Warrior", "Rogue"]:
+            messagebox.showerror("Invalid Class", "Please choose Mage, Warrior, or Rogue.")
+            return
+
+        character_name = self.character_name_var.get().strip()
+        if not character_name:
+            character_name = "Adventurer"
+
+        seed_text = self.seed_var.get().strip()
+        if seed_text:
+            run_seed = seed_text
+        else:
+            run_seed = str(random.randint(100000, 999999))
+
         self.start_screen.destroy()
-        self.start_run()
+        self.start_run(class_name, character_name, run_seed)
 
     # -------------------------
     # Character Panel
@@ -357,6 +602,12 @@ class ARPGGUI:
 
         self.highlight_matching_slot()
 
+    def update_seed_display(self):
+        if self.character is None or self.character.run_seed is None:
+            self.seed_display_label.config(text="Seed: -")
+        else:
+            self.seed_display_label.config(text=f"Seed: {self.character.run_seed}")
+    
     def highlight_matching_slot(self):
         for slot_name, widgets in self.equipment_slot_labels.items():
             widgets["frame"].config(highlightthickness=0)
@@ -440,6 +691,16 @@ class ARPGGUI:
         self.phase_text = ttk.Label(self.center_panel, text="No active run", font=("Arial", 11))
         self.phase_text.pack(pady=(0, 8))
 
+        self.reroll_label = ttk.Label(self.center_panel, text="Rerolls: 0", font=("Arial", 11, "bold"))
+        self.reroll_label.pack(pady=(0, 8))
+
+        self.reroll_button = ttk.Button(
+            self.center_panel,
+            text="Reroll Draft",
+            command=self.reroll_current_draft
+        )
+        self.reroll_button.pack(pady=(0, 8))
+
         self.center_mode_frame = ttk.Frame(self.center_panel)
         self.center_mode_frame.pack(fill="both", expand=True)
 
@@ -475,20 +736,12 @@ class ARPGGUI:
             )
             choose_button.pack(side="left", padx=(0, 5))
 
-            skip_button = ttk.Button(
-                btn_frame,
-                text="Skip",
-                command=self.skip_draft_choice
-            )
-            skip_button.pack(side="left")
-
             self.item_frames.append({
                 "outer": outer,
                 "header": header,
                 "text": text,
                 "preview_button": preview_button,
-                "choose_button": choose_button,
-                "skip_button": skip_button
+                "choose_button": choose_button
             })
 
             ToolTip(outer, lambda i=i: self.get_item_tooltip(i))
@@ -518,6 +771,35 @@ class ARPGGUI:
             command=self.continue_after_draft
         )
         self.next_button.pack(ipadx=20, ipady=10)
+
+    def update_reroll_display(self):
+        if self.character is None:
+            self.reroll_label.config(text="Rerolls: 0")
+            self.reroll_button.config(state="disabled")
+            return
+
+        self.reroll_label.config(text=f"Rerolls: {self.character.rerolls}")
+
+        if self.phase in ["opening_draft", "reward_draft"] and self.character.rerolls > 0:
+            self.reroll_button.config(state="normal")
+        else:
+            self.reroll_button.config(state="disabled")
+
+    def reroll_current_draft(self):
+        if self.character is None:
+            return
+
+        if self.phase not in ["opening_draft", "reward_draft"]:
+            return
+
+        if not self.character.spend_reroll():
+            messagebox.showinfo("No Rerolls", "You have no rerolls left.")
+            return
+
+        self.log("Spent 1 reroll to refresh all 3 draft items.")
+        self.update_character_display()
+        self.update_reroll_display()
+        self.show_draft_choices()
 
     def format_item_card_text(self, item):
         lines = [
@@ -657,13 +939,12 @@ class ARPGGUI:
     # Run Control
     # -------------------------
 
-    def start_run(self):
-        class_name = self.selected_class.get().strip()
-        if class_name not in ["Mage", "Warrior", "Rogue"]:
-            messagebox.showerror("Invalid Class", "Please choose Mage, Warrior, or Rogue.")
-            return
+    def start_run(self, class_name, character_name, run_seed):
+        self.rng = random.Random(str(run_seed))
+        self.item_generator.set_rng(self.rng)
+        self.enemy_generator.set_rng(self.rng)
 
-        self.character = Character(class_name)
+        self.character = Character(class_name, character_name=character_name, run_seed=run_seed)
         self.round_number = 1
         self.phase = "opening_draft"
         self.opening_draft_current = 1
@@ -677,7 +958,8 @@ class ARPGGUI:
         self.hide_boss_banner()
         self.next_button.config(text="Continue Combat", command=self.continue_after_draft)
 
-        self.log(f"Started new run as {class_name}.")
+        self.log(f"Started new run as {character_name} the {class_name}.")
+        self.log(f"Run seed: {run_seed}")
         self.log("Opening draft phase begins.")
 
         starter_weapon_name = CLASSES[class_name]["starter_weapon"]
@@ -691,6 +973,8 @@ class ARPGGUI:
         self.update_character_display()
         self.update_equipment_layout()
         self.update_status()
+        self.update_reroll_display()
+        self.update_seed_display()
         self.show_draft_choices()
 
     def update_status(self):
@@ -757,6 +1041,7 @@ class ARPGGUI:
             widgets["header"].config(bg=rarity_color)
             text_widget.config(bg=rarity_color)
 
+        self.update_reroll_display()
         self.preview_item(0)
 
     def preview_item(self, index):
@@ -797,10 +1082,12 @@ class ARPGGUI:
             if self.opening_draft_current < self.opening_draft_total:
                 self.opening_draft_current += 1
                 self.update_status()
+                self.update_reroll_display()
                 self.show_draft_choices()
             else:
                 self.phase = "awaiting_combat"
                 self.update_status()
+                self.update_reroll_display()
                 self.show_encounter_preview()
                 self.show_combat_ready_view(
                     f"Opening draft complete.\n\nReady for Combat Round {self.round_number}."
@@ -813,53 +1100,17 @@ class ARPGGUI:
                 self.phase = "victory"
                 self.update_best_run()
                 self.update_status()
+                self.update_reroll_display()
                 self.show_run_summary(victory=True)
                 messagebox.showinfo("Victory", "You conquered all 25 rounds!")
                 self.log("Victory! You conquered all 25 rounds.")
                 return
 
             self.update_status()
+            self.update_reroll_display()
             self.show_encounter_preview()
             self.show_combat_ready_view(
                 f"Reward draft complete.\n\nReady for Combat Round {self.round_number}."
-            )
-
-    def skip_draft_choice(self):
-        if not self.character:
-            return
-
-        self.log("Skipped draft reward.")
-        self.clear_item_cards()
-
-        if self.phase == "opening_draft":
-            if self.opening_draft_current < self.opening_draft_total:
-                self.opening_draft_current += 1
-                self.update_status()
-                self.show_draft_choices()
-            else:
-                self.phase = "awaiting_combat"
-                self.update_status()
-                self.show_encounter_preview()
-                self.show_combat_ready_view(
-                    f"Opening draft complete.\n\nReady for Combat Round {self.round_number}."
-                )
-        elif self.phase == "reward_draft":
-            self.phase = "awaiting_combat"
-            self.round_number += 1
-
-            if self.round_number > self.max_rounds:
-                self.phase = "victory"
-                self.update_best_run()
-                self.update_status()
-                self.show_run_summary(victory=True)
-                messagebox.showinfo("Victory", "You conquered all 25 rounds!")
-                self.log("Victory! You conquered all 25 rounds.")
-                return
-
-            self.update_status()
-            self.show_encounter_preview()
-            self.show_combat_ready_view(
-                f"Reward skipped.\n\nReady for Combat Round {self.round_number}."
             )
 
     def continue_after_draft(self):
@@ -901,7 +1152,7 @@ class ARPGGUI:
             self.show_encounter_preview()
 
         enemies = self.pending_enemies
-        result = auto_fight(self.character, enemies)
+        result = auto_fight(self.character, enemies, rng=self.rng)
         self.last_combat_result = result
 
         enemy_names = ", ".join(enemy.name for enemy in enemies)
@@ -924,6 +1175,7 @@ class ARPGGUI:
             self.phase = "game_over"
             self.update_best_run()
             self.update_status()
+            self.update_reroll_display()
             self.show_combat_ready_view(
                 f"You were defeated on round {self.round_number}.",
                 button_text="Start Over",
@@ -937,6 +1189,7 @@ class ARPGGUI:
             self.phase = "victory"
             self.update_best_run()
             self.update_status()
+            self.update_reroll_display()
             self.show_combat_ready_view(
                 "Victory!\n\nYou conquered all 25 rounds!",
                 button_text="Start Over",
@@ -951,10 +1204,13 @@ class ARPGGUI:
 
         if result["boss_present"]:
             self.next_reward_min_rarity = "Rare"
+            self.character.add_rerolls(2)
             self.log("Boss reward unlocked: next draft is guaranteed Rare or better.")
+            self.log("Boss reward: +2 rerolls.")
 
         self.update_best_run()
         self.update_status()
+        self.update_reroll_display()
         self.log(f"Round {self.round_number} cleared. Reward draft begins.")
         self.show_draft_choices()
 
@@ -1027,9 +1283,12 @@ class ARPGGUI:
         text.pack(fill="both", expand=True, padx=10, pady=10)
 
         lines = []
+        lines.append(f"Name: {self.character.character_name}")
         lines.append(f"Class: {self.character.class_name}")
+        lines.append(f"Seed: {self.character.run_seed}")
         lines.append(f"Result: {'Victory' if victory else 'Defeat'}")
         lines.append(f"Rounds Reached: {self.round_number}")
+        lines.append(f"Remaining Rerolls: {self.character.rerolls}")
         lines.append("")
 
         lines.append("Equipped Items:")

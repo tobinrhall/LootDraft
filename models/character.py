@@ -2,13 +2,16 @@ from data.classes import CLASSES
 
 
 class Character:
-    def __init__(self, class_name):
+    def __init__(self, class_name, character_name="Adventurer", run_seed=None):
         if class_name not in CLASSES:
             raise ValueError(f"Invalid class name: {class_name}")
 
         class_data = CLASSES[class_name]
 
         self.class_name = class_name
+        self.character_name = character_name.strip() if character_name else "Adventurer"
+        self.run_seed = run_seed
+
         self.base_stats = class_data["base_stats"].copy()
         self.passive = class_data["passive"]
         self.loot_tags = class_data["loot_tags"]
@@ -24,12 +27,21 @@ class Character:
             "Ring": None
         }
 
-        self.rerolls = 5 + self.get_reroll_bonus()
+        self.rerolls = class_data["starting_rerolls"] + self.get_reroll_bonus()
 
     def get_reroll_bonus(self):
         if self.passive["type"] == "reroll_bonus":
             return self.passive["value"]
         return 0
+
+    def add_rerolls(self, amount):
+        self.rerolls += amount
+
+    def spend_reroll(self):
+        if self.rerolls <= 0:
+            return False
+        self.rerolls -= 1
+        return True
 
     def equip_item(self, item):
         slot = item.slot
@@ -101,7 +113,9 @@ class Character:
 
     def __str__(self):
         lines = [
+            f"Name: {self.character_name}",
             f"Class: {self.class_name}",
+            f"Seed: {self.run_seed if self.run_seed is not None else 'Random'}",
             f"Passive: {self.passive['name']} - {self.passive['description']}",
             f"Loot Bias: {', '.join(self.loot_tags)}",
             f"Rerolls: {self.rerolls}",

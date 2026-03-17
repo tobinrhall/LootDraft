@@ -26,30 +26,18 @@ def get_player_combat_stats(character):
 
     offense = base_offense + haste
 
-    crit_roll = random.randint(1, 100)
-    crit_triggered = crit_roll <= min(60, crit * 4)
-    crit_bonus = max(2, crit * 2) if crit_triggered else 0
-    offense += crit_bonus
-
-    crushing_bonus = crushing * 2
-    offense += crushing_bonus
-
-    mitigation = armor + defense + (stamina // 2)
-    dodge_chance = dodge + evade + dodge_bonus
-
     return {
         "physical_power": physical_power,
         "magical_power": magical_power,
         "base_offense": base_offense,
         "haste_bonus": haste,
-        "crit_bonus": crit_bonus,
-        "crit_triggered": crit_triggered,
-        "crushing_bonus": crushing_bonus,
-        "offense": offense,
-        "mitigation": mitigation,
-        "dodge_chance": dodge_chance,
+        "crit_stat": crit,
+        "crushing_bonus": crushing * 2,
+        "mitigation": armor + defense + (stamina // 2),
+        "dodge_chance": dodge + evade + dodge_bonus,
         "slow_power": slow,
         "crushing_power": crushing,
+        "offense_pre_rolls": offense
     }
 
 
@@ -85,10 +73,18 @@ def calculate_enemy_team_score(enemies, player_stats):
     return total_score, enemy_breakdown, slow_reduction, crushing_reduction
 
 
-def auto_fight(character, enemies):
+def auto_fight(character, enemies, rng=None):
+    rng = rng if rng is not None else random.Random()
+
     player_stats = get_player_combat_stats(character)
 
-    base_player_score = player_stats["offense"] + player_stats["mitigation"]
+    crit_roll = rng.randint(1, 100)
+    crit_triggered = crit_roll <= min(60, player_stats["crit_stat"] * 4)
+    crit_bonus = max(2, player_stats["crit_stat"] * 2) if crit_triggered else 0
+
+    offense = player_stats["offense_pre_rolls"] + crit_bonus + player_stats["crushing_bonus"]
+    base_player_score = offense + player_stats["mitigation"]
+
     enemy_score, enemy_breakdown, slow_reduction, crushing_reduction = calculate_enemy_team_score(
         enemies,
         player_stats
@@ -96,7 +92,7 @@ def auto_fight(character, enemies):
 
     player_score = base_player_score
 
-    dodge_roll = random.randint(1, 100)
+    dodge_roll = rng.randint(1, 100)
     dodged = dodge_roll <= min(50, player_stats["dodge_chance"])
     dodge_bonus_applied = 6 if dodged else 0
     player_score += dodge_bonus_applied
@@ -121,13 +117,13 @@ def auto_fight(character, enemies):
         "enemy_score": enemy_score,
         "dodged": dodged,
         "boss_present": boss_present,
-        "crit_triggered": player_stats["crit_triggered"],
+        "crit_triggered": crit_triggered,
         "player_breakdown": {
             "physical_power": player_stats["physical_power"],
             "magical_power": player_stats["magical_power"],
             "base_offense": player_stats["base_offense"],
             "haste_bonus": player_stats["haste_bonus"],
-            "crit_bonus": player_stats["crit_bonus"],
+            "crit_bonus": crit_bonus,
             "crushing_bonus": player_stats["crushing_bonus"],
             "mitigation": player_stats["mitigation"],
             "dodge_bonus_applied": dodge_bonus_applied,

@@ -3,7 +3,9 @@ from models.enemy import Enemy
 
 
 class EnemyGenerator:
-    def __init__(self):
+    def __init__(self, rng=None):
+        self.rng = rng if rng is not None else random.Random()
+
         self.normal_names = [
             "Skeleton",
             "Bandit",
@@ -23,6 +25,9 @@ class EnemyGenerator:
             "Ashen King"
         ]
 
+    def set_rng(self, rng):
+        self.rng = rng
+
     def is_boss_round(self, round_number):
         return round_number in [5, 10, 15, 20, 25]
 
@@ -39,7 +44,7 @@ class EnemyGenerator:
 
         min_level = max(1, round_number - 2)
         max_level = max(1, round_number)
-        return random.randint(min_level, max_level)
+        return self.rng.randint(min_level, max_level)
 
     def build_enemy_stats(self, enemy_level, difficulty_band, is_boss=False):
         if difficulty_band == "early":
@@ -71,9 +76,9 @@ class EnemyGenerator:
         enemy_level = self.get_enemy_level(round_number, is_boss)
 
         if is_boss:
-            name = random.choice(self.boss_names)
+            name = self.rng.choice(self.boss_names)
         else:
-            name = random.choice(self.normal_names)
+            name = self.rng.choice(self.normal_names)
 
         health, attack, defense, dodge = self.build_enemy_stats(
             enemy_level,
@@ -95,5 +100,5 @@ class EnemyGenerator:
         if self.is_boss_round(round_number):
             return [self.generate_enemy(round_number, is_boss=True)]
 
-        enemy_count = random.randint(2, 4)
+        enemy_count = self.rng.randint(2, 4)
         return [self.generate_enemy(round_number, is_boss=False) for _ in range(enemy_count)]
